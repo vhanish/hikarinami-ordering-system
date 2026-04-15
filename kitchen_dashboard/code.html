@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>HIKARINAMI | Kitchen Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#00799c",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-on-surface": "#f1f1f1",
+                        "background": "#f9f9f9",
+                        "on-tertiary-fixed-variant": "#004d65",
+                        "surface-bright": "#f9f9f9",
+                        "inverse-primary": "#ffb3ac",
+                        "on-background": "#1a1c1c",
+                        "surface-container-high": "#e8e8e8",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-tertiary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-primary-fixed-variant": "#930010",
+                        "surface-container-low": "#f3f3f3",
+                        "outline": "#8f6f6c",
+                        "secondary-container": "#e2dfde",
+                        "on-primary": "#ffffff",
+                        "inverse-surface": "#2f3131",
+                        "primary": "#af101a",
+                        "surface-tint": "#ba1a20",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#7bd1f8",
+                        "surface-variant": "#e2e2e2",
+                        "tertiary-fixed": "#bee9ff",
+                        "tertiary": "#005f7b",
+                        "on-primary-fixed": "#410003",
+                        "on-primary-container": "#fff2f0",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#474746",
+                        "primary-fixed": "#ffdad6",
+                        "surface-container-highest": "#e2e2e2",
+                        "outline-variant": "#e4beba",
+                        "on-surface": "#1a1c1c",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "primary-fixed-dim": "#ffb3ac",
+                        "surface-container": "#eeeeee",
+                        "on-surface-variant": "#5b403d",
+                        "on-secondary-container": "#636262",
+                        "secondary": "#5f5e5e",
+                        "on-secondary-fixed": "#1b1c1c",
+                        "on-error-container": "#93000a",
+                        "primary-container": "#d32f2f",
+                        "on-tertiary-fixed": "#001f2a",
+                        "on-tertiary-container": "#e9f7ff",
+                        "surface": "#f9f9f9",
+                        "surface-dim": "#dadada"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Plus Jakarta Sans"],
+                        "body": ["Plus Jakarta Sans"],
+                        "label": ["Plus Jakarta Sans"]
+                    }
+                },
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for an editorial feel */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #f9f9f9; }
+        ::-webkit-scrollbar-thumb { background: #e8e8e8; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#f9f9f9]/80 backdrop-blur-md font-['Plus_Jakarta_Sans'] antialiased shadow-[0_24px_24px_rgba(26,28,28,0.04)]">
+<div class="flex justify-between items-center px-8 py-4 w-full">
+<div class="text-[1.125rem] font-bold tracking-tight text-[#1a1c1c]">HIKARINAMI</div>
+<nav class="hidden md:flex gap-8">
+<a class="text-[#5f5e5e] font-medium hover:text-[#1a1c1c] transition-colors duration-200 cursor-pointer active:opacity-70" href="#">Live Orders</a>
+<a class="text-[#5f5e5e] font-medium hover:text-[#1a1c1c] transition-colors duration-200 cursor-pointer active:opacity-70" href="#">Order History</a>
+<a class="text-[#af101a] font-semibold border-b-2 border-[#af101a] hover:text-[#1a1c1c] transition-colors duration-200 cursor-pointer active:opacity-70" href="#">Kitchen Stats</a>
+</nav>
+<div class="flex items-center gap-6">
+<span class="material-symbols-outlined text-on-surface cursor-pointer active:opacity-70" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface cursor-pointer active:opacity-70" data-icon="settings">settings</span>
+</div>
+</div>
+<div class="bg-[#e8e8e8] h-[1px] w-full"></div>
+</header>
+<main class="pt-24 pb-12 px-8">
+<!-- Dashboard Header -->
+<div class="flex justify-between items-end mb-10">
+<div>
+<h1 class="text-[2.0rem] font-bold tracking-[-0.02em] text-on-background leading-tight">Kitchen Live Board</h1>
+<p class="text-secondary text-sm mt-1">12 Active Orders • Kitchen Load: Optimal</p>
+</div>
+<div class="flex gap-4">
+<div class="flex items-center bg-surface-container-high px-4 py-2 rounded-lg">
+<span class="text-label-sm font-bold uppercase tracking-wider text-secondary mr-3">Filter:</span>
+<select class="bg-transparent border-none focus:ring-0 text-sm font-semibold text-on-background p-0">
+<option>All Sections</option>
+<option>Ramen Station</option>
+<option>Appetizers</option>
+<option>Drinks</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Bento-style Grid for Orders -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-8">
+<!-- Order Card 1: PREPARING -->
+<div class="bg-surface-container-lowest rounded-lg overflow-hidden flex flex-col h-full shadow-[0_24px_24px_rgba(26,28,28,0.04)] border-l-4 border-primary transition-all hover:scale-[1.01]">
+<div class="p-6 flex-grow">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="text-[1.375rem] font-extrabold tracking-[-0.01em] text-on-background">TABLE 4</h2>
+<p class="text-xs font-medium text-secondary mt-0.5">#HN-8291</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="px-3 py-1 bg-primary text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">PREPARING</span>
+<span class="text-xs text-primary font-bold mt-2">5 min ago</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="space-y-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">1x</span>
+<div>
+<p class="font-bold text-on-background">Tonkotsu Ramen</p>
+<div class="flex gap-2 mt-1">
+<span class="bg-surface-container-high text-[10px] px-2 py-0.5 rounded-full font-bold text-on-surface-variant uppercase">Extra Chashu</span>
+<span class="bg-surface-container-high text-[10px] px-2 py-0.5 rounded-full font-bold text-on-surface-variant uppercase">Spice: Medium</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">2x</span>
+<p class="font-bold text-on-background">Diet Coke</p>
+</div>
+</div>
+</div>
+<!-- Special Instructions -->
+<div class="bg-surface-container-low p-4 rounded-lg">
+<p class="text-[0.6875rem] font-bold text-secondary uppercase tracking-widest mb-1">Special Instructions</p>
+<p class="text-sm text-on-background italic font-medium">"No scallions on the ramen please."</p>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="p-6 pt-0 mt-auto flex flex-col gap-2">
+<button class="w-full py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90 active:opacity-70 transition-all">Mark Ready</button>
+<button class="w-full py-2 bg-transparent text-secondary font-bold text-[10px] uppercase tracking-widest hover:text-on-background transition-colors">Complete Order</button>
+</div>
+</div>
+<!-- Order Card 2: NEW -->
+<div class="bg-surface-container-lowest rounded-lg overflow-hidden flex flex-col h-full shadow-[0_24px_24px_rgba(26,28,28,0.04)] transition-all hover:scale-[1.01]">
+<div class="p-6 flex-grow">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="text-[1.375rem] font-extrabold tracking-[-0.01em] text-on-background">TABLE 12</h2>
+<p class="text-xs font-medium text-secondary mt-0.5">#HN-8295</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="px-3 py-1 bg-surface-container-highest text-on-surface-variant text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">NEW</span>
+<span class="text-xs text-secondary font-medium mt-2">Just now</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="space-y-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">1x</span>
+<div>
+<p class="font-bold text-on-background">Miso Ramen</p>
+<div class="flex gap-2 mt-1">
+<span class="bg-surface-container-high text-[10px] px-2 py-0.5 rounded-full font-bold text-on-surface-variant uppercase">Soft Egg</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">1x</span>
+<p class="font-bold text-on-background">Sapporo Beer</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="p-6 pt-0 mt-auto flex flex-col gap-2">
+<button class="w-full py-3 border-2 border-primary text-primary font-bold text-sm rounded-lg hover:bg-primary/5 active:opacity-70 transition-all">Start Preparing</button>
+<button class="w-full py-2 bg-transparent text-secondary font-bold text-[10px] uppercase tracking-widest hover:text-on-background transition-colors">Complete Order</button>
+</div>
+</div>
+<!-- Order Card 3: READY -->
+<div class="bg-surface-container-lowest rounded-lg overflow-hidden flex flex-col h-full shadow-[0_24px_24px_rgba(26,28,28,0.04)] border-l-4 border-tertiary-container transition-all hover:scale-[1.01]">
+<div class="p-6 flex-grow">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="text-[1.375rem] font-extrabold tracking-[-0.01em] text-on-background">TABLE 7</h2>
+<p class="text-xs font-medium text-secondary mt-0.5">#HN-8288</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="px-3 py-1 bg-tertiary-container text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">READY</span>
+<span class="text-xs text-secondary font-medium mt-2">12 min ago</span>
+</div>
+</div>
+<div class="space-y-6 opacity-60">
+<div class="space-y-3">
+<div class="flex justify-between items-start line-through">
+<div class="flex gap-3">
+<span class="text-secondary font-bold">2x</span>
+<p class="font-bold text-on-background">Shoyu Ramen</p>
+</div>
+</div>
+<div class="flex justify-between items-start line-through">
+<div class="flex gap-3">
+<span class="text-secondary font-bold">1x</span>
+<p class="font-bold text-on-background">Gyoza (6pc)</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="p-6 pt-0 mt-auto flex flex-col gap-2">
+<button class="w-full py-3 bg-on-background text-white font-bold text-sm rounded-lg hover:opacity-90 active:opacity-70 transition-all">Complete Order</button>
+<button class="w-full py-2 bg-transparent text-secondary font-bold text-[10px] uppercase tracking-widest hover:text-on-background transition-colors">Back to Kitchen</button>
+</div>
+</div>
+<!-- Order Card 4: PREPARING (Large Order) -->
+<div class="bg-surface-container-lowest rounded-lg overflow-hidden flex flex-col h-full shadow-[0_24px_24px_rgba(26,28,28,0.04)] border-l-4 border-primary transition-all hover:scale-[1.01]">
+<div class="p-6 flex-grow">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="text-[1.375rem] font-extrabold tracking-[-0.01em] text-on-background">TABLE 2</h2>
+<p class="text-xs font-medium text-secondary mt-0.5">#HN-8290</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="px-3 py-1 bg-primary text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">PREPARING</span>
+<span class="text-xs text-primary font-bold mt-2">8 min ago</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="space-y-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">4x</span>
+<p class="font-bold text-on-background">Tonkotsu Ramen</p>
+</div>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">2x</span>
+<p class="font-bold text-on-background">Takoyaki</p>
+</div>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="text-primary font-bold">4x</span>
+<p class="font-bold text-on-background">Iced Green Tea</p>
+</div>
+</div>
+</div>
+<!-- Special Instructions -->
+<div class="bg-surface-container-low p-4 rounded-lg border-l-2 border-primary/20">
+<p class="text-[0.6875rem] font-bold text-secondary uppercase tracking-widest mb-1">Special Instructions</p>
+<p class="text-sm text-on-background italic font-medium">"Allergen warning: Peanut allergy at table."</p>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="p-6 pt-0 mt-auto flex flex-col gap-2">
+<button class="w-full py-3 bg-primary text-white font-bold text-sm rounded-lg hover:opacity-90 active:opacity-70 transition-all">Mark Ready</button>
+<button class="w-full py-2 bg-transparent text-secondary font-bold text-[10px] uppercase tracking-widest hover:text-on-background transition-colors">Complete Order</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation for Tablet/Mobile -->
+<div class="md:hidden fixed bottom-0 left-0 w-full bg-surface-container-lowest border-t border-outline-variant/10 px-8 py-3 flex justify-around items-center z-50">
+<div class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined" data-icon="restaurant">restaurant</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">Orders</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-secondary">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">History</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-secondary">
+<span class="material-symbols-outlined" data-icon="bar_chart">bar_chart</span>
+<span class="text-[10px] font-bold uppercase tracking-wider">Stats</span>
+</div>
+</div>
+</body></html>

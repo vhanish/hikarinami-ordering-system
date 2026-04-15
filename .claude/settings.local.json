@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Read(//usr/local/**)",
+      "Read(//usr/**)",
+      "Bash(command -v node)",
+      "Bash(command -v npm)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/iHasF/AppData/Local/Programs//**)",
+      "Read(//c/Users/iHasF/AppData/Roaming/**)",
+      "Read(//c//**)",
+      "Bash(cmd.exe /c \"where node 2>&1 && where npm 2>&1\")",
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"where npm\")",
+      "Bash(cmd.exe /c \"node --version\")",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs:/c/Users/iHasF/AppData/Roaming/npm\")",
+      "Bash(npm --version)",
+      "Bash(py --version)",
+      "Bash(python -m http.server 3000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/main.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/data/menu.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/state/cart.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/pages/MenuPage.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/pages/ItemDetailsSheet.js)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/state/order.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/src/pages/OrderConfirmedPage.js)",
+      "Bash(grep -v \"//\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/index.html)"
+    ]
+  }
+}
