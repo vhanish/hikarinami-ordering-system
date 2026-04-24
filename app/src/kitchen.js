@@ -7,17 +7,9 @@ let _allOrders    = [];    // live-board cache (excludes completed)
 let _activeFilter = 'all'; // 'all' | 'new' | 'preparing' | 'ready'
 let _activeView   = 'live';// 'live' | 'history' | 'stats'
 let _inflightCount = 0;    // blocks Realtime refresh while a local write is in-flight
-let _soundEnabled  = true;  // mute toggle state
-let _audioUnlocked = false; // true after first user gesture unlocks Web Audio
-
-// Create AudioContext immediately — browsers allow this but start it suspended.
-// It becomes 'running' after the first user gesture (click), which kitchen staff
-// always do before orders arrive (opening the page counts in modern browsers).
-const _AC = window.AudioContext || window['webkitAudioContext'];
-let _audioCtx = (() => {
-  try { return _AC ? new _AC() : null; }
-  catch (e) { return null; }
-})();
+let _soundEnabled    = true;  // mute toggle state
+let _audioUnlocked   = false; // true after first click unlocks the <audio> element
+const _pendingFetch  = new Set(); // order IDs with an in-flight fetchOneOrder call
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -179,64 +171,58 @@ function updateAgeTimers() {
 }
 
 // ---------------------------------------------------------------------------
-// Sound alert — synthesized bell, no audio files needed
+// Sound alert — HTML5 Audio with inline-generated WAV bell
+//
+// Using <audio> instead of Web Audio API because once an HTMLMediaElement is
+// played during a user gesture, play() can be called from any context
+// (including WebSocket callbacks) without re-triggering the autoplay gate.
 // ---------------------------------------------------------------------------
 
-// Called on every click. Plays a silent 1-sample buffer the first time, which
-// permanently unlocks Chrome's autoplay gate — after this the AudioContext
-// stays 'running' so chimes fired from WebSocket callbacks work.
-function unlockAudio() {
-  if (!_audioCtx || _audioUnlocked) return;
-  _audioUnlocked = true;
-  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
-  try {
-    const buf = _audioCtx.createBuffer(1, 1, _audioCtx.sampleRate);
-    const src = _audioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(_audioCtx.destination);
-    src.start(0);
-  } catch (e) {}
+function _makeChimeDataURL() {
+  const sr = 22050, dur = 1.4, n = Math.floor(sr * dur);
+  const ab = new ArrayBuffer(44 + n * 2);
+  const dv = new DataView(ab);
+  const ws = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true);
+  ws(8, 'WAVE'); ws(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true);
+  dv.setUint16(32, 2, true);  dv.setUint16(34, 16, true);
+  ws(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const s = 0.45 * Math.exp(-t * 2.2) * Math.sin(2 * Math.PI * 880  * t)
+            + 0.20 * Math.exp(-t * 4.5) * Math.sin(2 * Math.PI * 1320 * t);
+    dv.setInt16(44 + i * 2, Math.round(s * 32767), true);
+  }
+  const bytes = new Uint8Array(ab);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, bytes.length)));
+  }
+  return 'data:audio/wav;base64,' + btoa(bin);
 }
 
-function _doChime() {
-  if (!_audioCtx || _audioCtx.state !== 'running') return;
-  const now = _audioCtx.currentTime;
+let _chimeEl = null;
+try { _chimeEl = new Audio(_makeChimeDataURL()); }
+catch (e) { console.warn('[kitchen] audio init failed:', e); }
 
-  // Primary tone: 880 Hz (A5), 1.4 s decay
-  const osc1  = _audioCtx.createOscillator();
-  const gain1 = _audioCtx.createGain();
-  osc1.connect(gain1);
-  gain1.connect(_audioCtx.destination);
-  osc1.type = 'sine';
-  osc1.frequency.value = 880;
-  gain1.gain.setValueAtTime(0.45, now);
-  gain1.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
-  osc1.start(now);
-  osc1.stop(now + 1.4);
-
-  // Harmonic: 1320 Hz (E6), shorter 0.7 s decay
-  const osc2  = _audioCtx.createOscillator();
-  const gain2 = _audioCtx.createGain();
-  osc2.connect(gain2);
-  gain2.connect(_audioCtx.destination);
-  osc2.type = 'sine';
-  osc2.frequency.value = 1320;
-  gain2.gain.setValueAtTime(0.2, now);
-  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
-  osc2.start(now);
-  osc2.stop(now + 0.7);
+// Called on every non-bell-icon click. Plays the chime silently the first
+// time to satisfy Chrome's autoplay policy for subsequent non-gesture calls.
+function unlockAudio() {
+  if (_audioUnlocked || !_chimeEl) return;
+  _audioUnlocked = true;
+  const savedVol = _chimeEl.volume;
+  _chimeEl.volume = 0;
+  _chimeEl.play()
+    .then(() => { _chimeEl.pause(); _chimeEl.currentTime = 0; _chimeEl.volume = savedVol; })
+    .catch(() => { _chimeEl.volume = savedVol; });
 }
 
 function playNewOrderChime() {
-  if (!_soundEnabled || !_audioCtx) return;
-  if (_audioCtx.state === 'running') {
-    _doChime();
-  } else if (_audioCtx.state === 'suspended' && _audioUnlocked) {
-    // Chrome re-suspended the context after inactivity or the tab went to the
-    // background. Because it was previously unlocked by a user gesture,
-    // resume() succeeds from any context — including a WebSocket callback.
-    _audioCtx.resume().then(_doChime).catch(() => {});
-  }
+  if (!_soundEnabled || !_chimeEl) return;
+  _chimeEl.currentTime = 0;
+  _chimeEl.play().catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +247,9 @@ function liveCardHTML(order) {
     : `<span class="px-3 py-1 bg-tertiary-container text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">READY</span>
        <span data-placed-at="${order.created_at}" class="text-xs font-semibold mt-2">${relativeTime(order.created_at)}</span>`;
 
-  const itemsListHTML = isReady
+  const itemsListHTML = items.length === 0
+    ? `<p class="text-secondary text-sm italic">Loading items…</p>`
+    : isReady
     ? items.map(item => `
         <div class="flex justify-between items-start line-through">
           <div class="flex gap-3">
@@ -520,13 +508,16 @@ function updateSoundToggleIcon() {
 }
 if (soundToggleEl) {
   soundToggleEl.addEventListener('click', () => {
-    // unlockAudio() already fired via the document listener (bubbling),
-    // but call it explicitly here too so the context is live before the chime.
-    unlockAudio();
     _soundEnabled = !_soundEnabled;
     updateSoundToggleIcon();
-    // Play a test chime when enabling so staff can confirm audio is working.
-    if (_soundEnabled) playNewOrderChime();
+    if (_soundEnabled && _chimeEl) {
+      // This click IS a user gesture — mark unlocked and play test chime directly.
+      // (The document 'click' listener will fire next via bubbling but _audioUnlocked
+      //  will already be true so unlockAudio() does nothing.)
+      _audioUnlocked = true;
+      _chimeEl.currentTime = 0;
+      _chimeEl.play().catch(() => {});
+    }
   });
 }
 updateSoundToggleIcon();
@@ -540,19 +531,36 @@ setInterval(refreshLive, 15000);
 // Update age timer colors every 30 s without a full re-render
 setInterval(updateAgeTimers, 30000);
 
-// Supabase Realtime — split INSERT (new order → chime) from UPDATE (status change).
-// Skip when _inflightCount > 0: our own write is in-flight and setStatus will
-// call refreshLive() itself once the write settles, avoiding a race condition.
+// Supabase Realtime subscriptions.
+// orders INSERT  → show stub card immediately (items arrive separately), play chime
+// order_items INSERT → fill items into the stub card once they're in the DB
+// orders UPDATE  → full refresh (status change from kitchen buttons)
 supabase
   .channel('kitchen-orders')
-  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
     playNewOrderChime();
     if (_activeView !== 'live' || _inflightCount !== 0) return;
-    // Fetch only the new order (with its items) instead of reloading everything —
-    // one targeted query is faster than the full list refetch.
-    const order = await fetchOneOrder(payload.new.id);
+    // Render the card immediately using the payload data — items haven't been
+    // inserted yet (placeOrder() does two separate API calls), so show a stub.
+    // The order_items INSERT listener below fills them in moments later.
+    const stub = { ...payload.new, order_items: [] };
+    _allOrders = [stub, ..._allOrders.filter(o => o.id !== stub.id)];
+    applyFilter();
+  })
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_items' }, async (payload) => {
+    if (_activeView !== 'live' || _inflightCount !== 0) return;
+    const orderId = payload.new.order_id;
+    // Only act if we have a stub for this order (no items yet).
+    const stub = _allOrders.find(o => o.id === orderId);
+    if (!stub || stub.order_items.length > 0) return;
+    // Debounce: skip if a fetch is already in flight for this order
+    // (bulk insert fires one event per item row).
+    if (_pendingFetch.has(orderId)) return;
+    _pendingFetch.add(orderId);
+    const order = await fetchOneOrder(orderId);
+    _pendingFetch.delete(orderId);
     if (order && order.status !== 'completed') {
-      _allOrders = [order, ..._allOrders.filter(o => o.id !== order.id)];
+      _allOrders = _allOrders.map(o => o.id === order.id ? order : o);
       applyFilter();
     }
   })
