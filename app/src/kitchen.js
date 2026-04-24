@@ -7,6 +7,16 @@ let _allOrders    = [];    // live-board cache (excludes completed)
 let _activeFilter = 'all'; // 'all' | 'new' | 'preparing' | 'ready'
 let _activeView   = 'live';// 'live' | 'history' | 'stats'
 let _inflightCount = 0;    // blocks Realtime refresh while a local write is in-flight
+let _soundEnabled = true;  // mute toggle state
+
+// Create AudioContext immediately — browsers allow this but start it suspended.
+// It becomes 'running' after the first user gesture (click), which kitchen staff
+// always do before orders arrive (opening the page counts in modern browsers).
+const _AC = window.AudioContext || window['webkitAudioContext'];
+let _audioCtx = (() => {
+  try { return _AC ? new _AC() : null; }
+  catch (e) { return null; }
+})();
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -140,6 +150,65 @@ function notesBlockHTML(items) {
 }
 
 // ---------------------------------------------------------------------------
+// Order age timers
+// ---------------------------------------------------------------------------
+function ageColor(isoString) {
+  const mins = Math.floor((Date.now() - new Date(isoString)) / 60000);
+  if (mins < 5)  return '#5f5e5e'; // neutral — fresh order
+  if (mins < 15) return '#d97706'; // amber  — getting old
+  return '#c0392b';                // red    — needs attention
+}
+
+function updateAgeTimers() {
+  document.querySelectorAll('[data-placed-at]').forEach(el => {
+    el.textContent  = relativeTime(el.dataset.placedAt);
+    el.style.color  = ageColor(el.dataset.placedAt);
+    el.style.fontWeight = '600';
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sound alert — synthesized bell, no audio files needed
+// ---------------------------------------------------------------------------
+function ensureAudioContext() {
+  if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume();
+}
+
+async function playNewOrderChime() {
+  if (!_soundEnabled || !_audioCtx) return;
+  // Resume suspended context (needs prior user gesture — kitchen staff always
+  // click something before orders arrive, so this succeeds in practice).
+  try { if (_audioCtx.state === 'suspended') await _audioCtx.resume(); }
+  catch (e) { return; }
+  if (_audioCtx.state !== 'running') return;
+  const now = _audioCtx.currentTime;
+
+  // Primary tone: 880 Hz (A5), 1.4 s decay
+  const osc1  = _audioCtx.createOscillator();
+  const gain1 = _audioCtx.createGain();
+  osc1.connect(gain1);
+  gain1.connect(_audioCtx.destination);
+  osc1.type = 'sine';
+  osc1.frequency.value = 880;
+  gain1.gain.setValueAtTime(0.45, now);
+  gain1.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+  osc1.start(now);
+  osc1.stop(now + 1.4);
+
+  // Harmonic: 1320 Hz (E6, a fifth up), shorter 0.7 s decay
+  const osc2  = _audioCtx.createOscillator();
+  const gain2 = _audioCtx.createGain();
+  osc2.connect(gain2);
+  gain2.connect(_audioCtx.destination);
+  osc2.type = 'sine';
+  osc2.frequency.value = 1320;
+  gain2.gain.setValueAtTime(0.2, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+  osc2.start(now);
+  osc2.stop(now + 0.7);
+}
+
+// ---------------------------------------------------------------------------
 // Card HTML — live board
 // ---------------------------------------------------------------------------
 function liveCardHTML(order) {
@@ -154,12 +223,12 @@ function liveCardHTML(order) {
 
   const statusBadge = isNew
     ? `<span class="px-3 py-1 bg-surface-container-highest text-on-surface-variant text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">NEW</span>
-       <span class="text-xs text-secondary font-medium mt-2">${relativeTime(order.created_at)}</span>`
+       <span data-placed-at="${order.created_at}" class="text-xs font-semibold mt-2">${relativeTime(order.created_at)}</span>`
     : isPreparing
     ? `<span class="px-3 py-1 bg-primary text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">PREPARING</span>
-       <span class="text-xs text-primary font-bold mt-2">${relativeTime(order.created_at)}</span>`
+       <span data-placed-at="${order.created_at}" class="text-xs font-semibold mt-2">${relativeTime(order.created_at)}</span>`
     : `<span class="px-3 py-1 bg-tertiary-container text-white text-[0.6875rem] font-bold tracking-[0.05em] uppercase rounded-full">READY</span>
-       <span class="text-xs text-secondary font-medium mt-2">${relativeTime(order.created_at)}</span>`;
+       <span data-placed-at="${order.created_at}" class="text-xs font-semibold mt-2">${relativeTime(order.created_at)}</span>`;
 
   const itemsListHTML = isReady
     ? items.map(item => `
@@ -278,6 +347,7 @@ function applyFilter() {
   if (filtered.length === 0) { showEmptyState('No active orders.'); return; }
   grid.innerHTML = filtered.map(liveCardHTML).join('');
   wireActionButtons();
+  updateAgeTimers(); // color-code timestamps immediately after render
 }
 
 async function refreshLive() {
@@ -405,18 +475,46 @@ if (filterSelect) {
 // Boot + realtime
 // ---------------------------------------------------------------------------
 
+// Initialize AudioContext on first user click (browser autoplay policy requires
+// a gesture before Web Audio can produce sound).
+document.addEventListener('click', ensureAudioContext);
+
+// Sound toggle — wired to the notifications icon in the header.
+const soundToggleEl = document.getElementById('sound-toggle');
+function updateSoundToggleIcon() {
+  if (!soundToggleEl) return;
+  soundToggleEl.textContent    = _soundEnabled ? 'notifications_active' : 'notifications_off';
+  soundToggleEl.title          = _soundEnabled ? 'Sound on — click to mute' : 'Sound muted — click to unmute';
+  soundToggleEl.style.color    = _soundEnabled ? '#af101a' : '#8f6f6c'; // primary red vs muted
+  soundToggleEl.style.opacity  = _soundEnabled ? '1' : '0.5';
+}
+if (soundToggleEl) {
+  soundToggleEl.addEventListener('click', () => {
+    _soundEnabled = !_soundEnabled;
+    updateSoundToggleIcon();
+  });
+}
+updateSoundToggleIcon();
+
 // Initial load — live view
 refreshLive();
 
 // Poll every 15 s (live view only — guard inside refreshLive)
 setInterval(refreshLive, 15000);
 
-// Supabase Realtime — re-fetch when another client changes an order.
+// Update age timer colors every 30 s without a full re-render
+setInterval(updateAgeTimers, 30000);
+
+// Supabase Realtime — split INSERT (new order → chime) from UPDATE (status change).
 // Skip when _inflightCount > 0: our own write is in-flight and setStatus will
 // call refreshLive() itself once the write settles, avoiding a race condition.
 supabase
   .channel('kitchen-orders')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
+    playNewOrderChime();
+    if (_activeView === 'live' && _inflightCount === 0) refreshLive();
+  })
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => {
     if (_activeView === 'live' && _inflightCount === 0) refreshLive();
   })
   .subscribe();
