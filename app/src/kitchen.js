@@ -7,9 +7,9 @@ let _allOrders    = [];    // live-board cache (excludes completed)
 let _activeFilter = 'all'; // 'all' | 'new' | 'preparing' | 'ready'
 let _activeView   = 'live';// 'live' | 'history' | 'stats'
 let _inflightCount = 0;    // blocks Realtime refresh while a local write is in-flight
-let _soundEnabled    = true;  // mute toggle state
-let _audioUnlocked   = false; // true after first click unlocks the <audio> element
-const _pendingFetch  = new Set(); // order IDs with an in-flight fetchOneOrder call
+let _soundEnabled   = true;  // mute toggle state
+let _pendingChime   = false; // play chime when tab regains focus if context wasn't ready
+const _pendingFetch = new Set(); // order IDs with an in-flight fetchOneOrder call
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -171,59 +171,70 @@ function updateAgeTimers() {
 }
 
 // ---------------------------------------------------------------------------
-// Sound alert — HTML5 Audio with inline-generated WAV bell
+// Sound alert — Web Audio API with a silent keep-alive oscillator
 //
-// Using <audio> instead of Web Audio API because once an HTMLMediaElement is
-// played during a user gesture, play() can be called from any context
-// (including WebSocket callbacks) without re-triggering the autoplay gate.
+// Chrome auto-suspends an AudioContext only when it has NO active nodes.
+// A zero-gain oscillator running permanently prevents that. Once the context
+// is 'running' it stays running even in background tabs, so chimes triggered
+// from WebSocket callbacks (not user gestures) work reliably.
 // ---------------------------------------------------------------------------
 
-function _makeChimeDataURL() {
-  const sr = 22050, dur = 1.4, n = Math.floor(sr * dur);
-  const ab = new ArrayBuffer(44 + n * 2);
-  const dv = new DataView(ab);
-  const ws = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
-  ws(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true);
-  ws(8, 'WAVE'); ws(12, 'fmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
-  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true);
-  dv.setUint16(32, 2, true);  dv.setUint16(34, 16, true);
-  ws(36, 'data'); dv.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    const s = 0.45 * Math.exp(-t * 2.2) * Math.sin(2 * Math.PI * 880  * t)
-            + 0.20 * Math.exp(-t * 4.5) * Math.sin(2 * Math.PI * 1320 * t);
-    dv.setInt16(44 + i * 2, Math.round(s * 32767), true);
-  }
-  const bytes = new Uint8Array(ab);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 8192) {
-    bin += String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, bytes.length)));
-  }
-  return 'data:audio/wav;base64,' + btoa(bin);
+const _AC = window.AudioContext || window['webkitAudioContext'];
+let _audioCtx = null;
+
+function _ensureContext() {
+  if (_audioCtx || !_AC) return;
+  try {
+    _audioCtx = new _AC();
+    // Silent oscillator — keeps the context active so Chrome never suspends it.
+    const keepAliveGain = _audioCtx.createGain();
+    keepAliveGain.gain.value = 0;
+    const keepAliveOsc = _audioCtx.createOscillator();
+    keepAliveOsc.frequency.value = 1; // 1 Hz, completely inaudible
+    keepAliveOsc.connect(keepAliveGain);
+    keepAliveGain.connect(_audioCtx.destination);
+    keepAliveOsc.start();
+  } catch (e) {}
 }
 
-let _chimeEl = null;
-try { _chimeEl = new Audio(_makeChimeDataURL()); }
-catch (e) { console.warn('[kitchen] audio init failed:', e); }
+async function unlockAudio() {
+  _ensureContext();
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    try { await _audioCtx.resume(); } catch (e) {}
+  }
+}
 
-// Called on every non-bell-icon click. Plays the chime silently the first
-// time to satisfy Chrome's autoplay policy for subsequent non-gesture calls.
-function unlockAudio() {
-  if (_audioUnlocked || !_chimeEl) return;
-  _audioUnlocked = true;
-  const savedVol = _chimeEl.volume;
-  _chimeEl.volume = 0;
-  _chimeEl.play()
-    .then(() => { _chimeEl.pause(); _chimeEl.currentTime = 0; _chimeEl.volume = savedVol; })
-    .catch(() => { _chimeEl.volume = savedVol; });
+function _doChime() {
+  if (!_audioCtx || _audioCtx.state !== 'running') return;
+  const now = _audioCtx.currentTime;
+  [[880, 0.5, 1.4], [1320, 0.2, 0.7]].forEach(([freq, gain, decay]) => {
+    const osc = _audioCtx.createOscillator();
+    const g   = _audioCtx.createGain();
+    osc.connect(g); g.connect(_audioCtx.destination);
+    osc.type = 'sine'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(gain, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + decay);
+    osc.start(now); osc.stop(now + decay);
+  });
 }
 
 function playNewOrderChime() {
-  if (!_soundEnabled || !_chimeEl) return;
-  _chimeEl.currentTime = 0;
-  _chimeEl.play().catch(() => {});
+  if (!_soundEnabled) return;
+  if (_audioCtx && _audioCtx.state === 'running') {
+    _doChime();
+  } else {
+    // Context not yet running (no user click yet) — queue for next focus event.
+    _pendingChime = true;
+  }
 }
+
+// When the tab comes back into view, flush any queued chime.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _pendingChime && _soundEnabled) {
+    _pendingChime = false;
+    _doChime();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Card HTML — live board
@@ -494,29 +505,25 @@ if (filterSelect) {
 // Boot + realtime
 // ---------------------------------------------------------------------------
 
-// Unlock audio on any click — after the first click the context stays 'running'.
-document.addEventListener('click', unlockAudio);
+// Any click on the page resumes the AudioContext (Chrome's autoplay gate).
+document.addEventListener('click', () => unlockAudio());
 
 // Sound toggle — wired to the notifications icon in the header.
 const soundToggleEl = document.getElementById('sound-toggle');
 function updateSoundToggleIcon() {
   if (!soundToggleEl) return;
-  soundToggleEl.textContent    = _soundEnabled ? 'notifications_active' : 'notifications_off';
-  soundToggleEl.title          = _soundEnabled ? 'Sound on — click to mute' : 'Sound muted — click to unmute';
-  soundToggleEl.style.color    = _soundEnabled ? '#af101a' : '#8f6f6c';
-  soundToggleEl.style.opacity  = _soundEnabled ? '1' : '0.5';
+  soundToggleEl.textContent   = _soundEnabled ? 'notifications_active' : 'notifications_off';
+  soundToggleEl.title         = _soundEnabled ? 'Sound on — click to mute' : 'Sound muted — click to unmute';
+  soundToggleEl.style.color   = _soundEnabled ? '#af101a' : '#8f6f6c';
+  soundToggleEl.style.opacity = _soundEnabled ? '1' : '0.5';
 }
 if (soundToggleEl) {
-  soundToggleEl.addEventListener('click', () => {
+  soundToggleEl.addEventListener('click', async () => {
     _soundEnabled = !_soundEnabled;
     updateSoundToggleIcon();
-    if (_soundEnabled && _chimeEl) {
-      // This click IS a user gesture — mark unlocked and play test chime directly.
-      // (The document 'click' listener will fire next via bubbling but _audioUnlocked
-      //  will already be true so unlockAudio() does nothing.)
-      _audioUnlocked = true;
-      _chimeEl.currentTime = 0;
-      _chimeEl.play().catch(() => {});
+    if (_soundEnabled) {
+      await unlockAudio(); // ensure context is running before playing
+      _doChime();          // test chime confirms audio is live
     }
   });
 }
@@ -540,12 +547,24 @@ supabase
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
     playNewOrderChime();
     if (_activeView !== 'live' || _inflightCount !== 0) return;
-    // Render the card immediately using the payload data — items haven't been
-    // inserted yet (placeOrder() does two separate API calls), so show a stub.
-    // The order_items INSERT listener below fills them in moments later.
+    // Show card immediately — items arrive via a separate insert, so render a
+    // stub now and let the order_items subscription fill them in.
     const stub = { ...payload.new, order_items: [] };
     _allOrders = [stub, ..._allOrders.filter(o => o.id !== stub.id)];
     applyFilter();
+    // Guaranteed fallback: if order_items subscription misses the event (Supabase
+    // publication config, RLS, network hiccup), fetch the full order after 700 ms.
+    setTimeout(async () => {
+      const cur = _allOrders.find(o => o.id === payload.new.id);
+      if (!cur || cur.order_items.length > 0) return; // already filled
+      if (_pendingFetch.has(payload.new.id)) return;  // fetch already in flight
+      _pendingFetch.add(payload.new.id);
+      const order = await fetchOneOrder(payload.new.id);
+      _pendingFetch.delete(payload.new.id);
+      if (!order || order.status === 'completed') return;
+      _allOrders = _allOrders.map(o => o.id === order.id ? order : o);
+      if (_activeView === 'live') applyFilter();
+    }, 700);
   })
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_items' }, async (payload) => {
     if (_activeView !== 'live' || _inflightCount !== 0) return;
