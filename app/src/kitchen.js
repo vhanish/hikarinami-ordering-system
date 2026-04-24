@@ -40,6 +40,16 @@ async function fetchLiveOrders() {
   return data || [];
 }
 
+async function fetchOneOrder(id) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, table_number, status, created_at, order_items(id, name, quantity, extras, spice_level, notes)')
+    .eq('id', id)
+    .single();
+  if (error) { console.error('[kitchen] fetchOneOrder failed:', error); return null; }
+  return data;
+}
+
 async function fetchCompletedOrders() {
   const { data, error } = await supabase
     .from('orders')
@@ -188,12 +198,8 @@ function unlockAudio() {
   } catch (e) {}
 }
 
-function playNewOrderChime() {
-  if (!_soundEnabled || !_audioCtx) return;
-  // Do NOT attempt resume() here — this is called from a WebSocket callback
-  // (not a user gesture), so Chrome will block it. unlockAudio() on first
-  // click ensures the context is already 'running' before orders arrive.
-  if (_audioCtx.state !== 'running') return;
+function _doChime() {
+  if (!_audioCtx || _audioCtx.state !== 'running') return;
   const now = _audioCtx.currentTime;
 
   // Primary tone: 880 Hz (A5), 1.4 s decay
@@ -208,7 +214,7 @@ function playNewOrderChime() {
   osc1.start(now);
   osc1.stop(now + 1.4);
 
-  // Harmonic: 1320 Hz (E6, a fifth up), shorter 0.7 s decay
+  // Harmonic: 1320 Hz (E6), shorter 0.7 s decay
   const osc2  = _audioCtx.createOscillator();
   const gain2 = _audioCtx.createGain();
   osc2.connect(gain2);
@@ -219,6 +225,18 @@ function playNewOrderChime() {
   gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
   osc2.start(now);
   osc2.stop(now + 0.7);
+}
+
+function playNewOrderChime() {
+  if (!_soundEnabled || !_audioCtx) return;
+  if (_audioCtx.state === 'running') {
+    _doChime();
+  } else if (_audioCtx.state === 'suspended' && _audioUnlocked) {
+    // Chrome re-suspended the context after inactivity or the tab went to the
+    // background. Because it was previously unlocked by a user gesture,
+    // resume() succeeds from any context — including a WebSocket callback.
+    _audioCtx.resume().then(_doChime).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -527,9 +545,16 @@ setInterval(updateAgeTimers, 30000);
 // call refreshLive() itself once the write settles, avoiding a race condition.
 supabase
   .channel('kitchen-orders')
-  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
     playNewOrderChime();
-    if (_activeView === 'live' && _inflightCount === 0) refreshLive();
+    if (_activeView !== 'live' || _inflightCount !== 0) return;
+    // Fetch only the new order (with its items) instead of reloading everything —
+    // one targeted query is faster than the full list refetch.
+    const order = await fetchOneOrder(payload.new.id);
+    if (order && order.status !== 'completed') {
+      _allOrders = [order, ..._allOrders.filter(o => o.id !== order.id)];
+      applyFilter();
+    }
   })
   .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => {
     if (_activeView === 'live' && _inflightCount === 0) refreshLive();
