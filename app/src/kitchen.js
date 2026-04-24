@@ -7,7 +7,8 @@ let _allOrders    = [];    // live-board cache (excludes completed)
 let _activeFilter = 'all'; // 'all' | 'new' | 'preparing' | 'ready'
 let _activeView   = 'live';// 'live' | 'history' | 'stats'
 let _inflightCount = 0;    // blocks Realtime refresh while a local write is in-flight
-let _soundEnabled = true;  // mute toggle state
+let _soundEnabled  = true;  // mute toggle state
+let _audioUnlocked = false; // true after first user gesture unlocks Web Audio
 
 // Create AudioContext immediately — browsers allow this but start it suspended.
 // It becomes 'running' after the first user gesture (click), which kitchen staff
@@ -170,16 +171,28 @@ function updateAgeTimers() {
 // ---------------------------------------------------------------------------
 // Sound alert — synthesized bell, no audio files needed
 // ---------------------------------------------------------------------------
-function ensureAudioContext() {
-  if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume();
+
+// Called on every click. Plays a silent 1-sample buffer the first time, which
+// permanently unlocks Chrome's autoplay gate — after this the AudioContext
+// stays 'running' so chimes fired from WebSocket callbacks work.
+function unlockAudio() {
+  if (!_audioCtx || _audioUnlocked) return;
+  _audioUnlocked = true;
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+  try {
+    const buf = _audioCtx.createBuffer(1, 1, _audioCtx.sampleRate);
+    const src = _audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(_audioCtx.destination);
+    src.start(0);
+  } catch (e) {}
 }
 
-async function playNewOrderChime() {
+function playNewOrderChime() {
   if (!_soundEnabled || !_audioCtx) return;
-  // Resume suspended context (needs prior user gesture — kitchen staff always
-  // click something before orders arrive, so this succeeds in practice).
-  try { if (_audioCtx.state === 'suspended') await _audioCtx.resume(); }
-  catch (e) { return; }
+  // Do NOT attempt resume() here — this is called from a WebSocket callback
+  // (not a user gesture), so Chrome will block it. unlockAudio() on first
+  // click ensures the context is already 'running' before orders arrive.
   if (_audioCtx.state !== 'running') return;
   const now = _audioCtx.currentTime;
 
@@ -475,9 +488,8 @@ if (filterSelect) {
 // Boot + realtime
 // ---------------------------------------------------------------------------
 
-// Initialize AudioContext on first user click (browser autoplay policy requires
-// a gesture before Web Audio can produce sound).
-document.addEventListener('click', ensureAudioContext);
+// Unlock audio on any click — after the first click the context stays 'running'.
+document.addEventListener('click', unlockAudio);
 
 // Sound toggle — wired to the notifications icon in the header.
 const soundToggleEl = document.getElementById('sound-toggle');
@@ -485,13 +497,18 @@ function updateSoundToggleIcon() {
   if (!soundToggleEl) return;
   soundToggleEl.textContent    = _soundEnabled ? 'notifications_active' : 'notifications_off';
   soundToggleEl.title          = _soundEnabled ? 'Sound on — click to mute' : 'Sound muted — click to unmute';
-  soundToggleEl.style.color    = _soundEnabled ? '#af101a' : '#8f6f6c'; // primary red vs muted
+  soundToggleEl.style.color    = _soundEnabled ? '#af101a' : '#8f6f6c';
   soundToggleEl.style.opacity  = _soundEnabled ? '1' : '0.5';
 }
 if (soundToggleEl) {
   soundToggleEl.addEventListener('click', () => {
+    // unlockAudio() already fired via the document listener (bubbling),
+    // but call it explicitly here too so the context is live before the chime.
+    unlockAudio();
     _soundEnabled = !_soundEnabled;
     updateSoundToggleIcon();
+    // Play a test chime when enabling so staff can confirm audio is working.
+    if (_soundEnabled) playNewOrderChime();
   });
 }
 updateSoundToggleIcon();
